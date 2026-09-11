@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LDR Heatmap – Assay Data Visualizer</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #f0f2f5;
+      --surface:     #ffffff;
+      --border:      #d1d5db;
+      --border-dark: #94a3b8;
+      --accent:      #2563eb;
+      --accent-lt:   #eff6ff;
+      --text:        #1e293b;
+      --muted:       #64748b;
+      --missing-bg:  #e2e8f0;
+      --radius:      10px;
+      --shadow:      0 2px 16px rgba(0,0,0,.09);
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    #app { display: flex; min-height: 100vh; }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: 280px;
+      min-width: 280px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 24px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 26px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    #sidebar h1 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1.35;
+    }
+    #sidebar h1 span {
+      display: block;
+      font-size: .72rem;
+      font-weight: 400;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    .section-label {
+      font-size: .68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .09em;
+      color: var(--muted);
+      margin-bottom: 9px;
+    }
+
+    #drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 22px 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      background: var(--bg);
+    }
+    #drop-zone:hover,
+    #drop-zone.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-lt);
+    }
+    #drop-zone svg { display: block; margin: 0 auto 8px; }
+    #drop-zone p   { font-size: .82rem; color: var(--muted); line-height: 1.55; }
+    #drop-zone strong { color: var(--accent); }
+    #file-input { display: none; }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      user-select: none;
+      transition: background .15s;
+    }
+    .toggle-row:hover { background: var(--bg); }
+    .toggle-row input[type=checkbox] {
+      width: 16px; height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .toggle-row label { font-size: .88rem; cursor: pointer; }
+
+    #status {
+      font-size: .78rem;
+      color: var(--muted);
+      text-align: center;
+      padding: 4px 0;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    #status.error { color: #dc2626; }
+    #status.ok    { color: #16a34a; }
+
+    .missing-swatch {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: .78rem;
+      color: var(--muted);
+    }
+    .missing-swatch-box {
+      width: 22px; height: 22px;
+      border-radius: 4px;
+      background: var(--missing-bg);
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    /* ── Legend ── */
+    #legend-outer {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #legend-canvas { display: block; border-radius: 4px; }
+
+    .legend-x-label {
+      font-size: .72rem;
+      color: var(--muted);
+      text-align: center;
+      margin-top: 4px;
+    }
+    .legend-x-label strong { color: #375623; }
+
+    /* ── Main ── */
+    #main {
+      flex: 1;
+      padding: 28px 24px;
+      overflow-x: auto;
+      min-width: 0;
+    }
+
+    #main-header {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      margin-bottom: 22px;
+      flex-wrap: wrap;
+    }
+    #main-header h2 { font-size: 1.1rem; font-weight: 600; color: var(--text); }
+    #file-badge {
+      font-size: .78rem;
+      background: var(--accent-lt);
+      color: var(--accent);
+      border: 1px solid #bfdbfe;
+      border-radius: 20px;
+      padding: 2px 10px;
+      display: none;
+    }
+
+    #heatmaps-container {
+      display: flex;
+      flex-direction: row;
+      gap: 28px;
+      align-items: flex-start;
+      flex-wrap: nowrap;
+    }
+
+    .trial-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px 16px 16px;
+      flex-shrink: 0;
+    }
+
+    .trial-block h3 {
+      font-size: .92rem;
+      font-weight: 700;
+      margin-bottom: 14px;
+      color: var(--accent);
+      text-align: center;
+      letter-spacing: .02em;
+    }
+
+    /* ── Heatmap table ── */
+    .heatmap-table {
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+
+    .heatmap-table th.chelator-header {
+      font-size: .78rem;
+      font-weight: 700;
+      color: var(--text);
+      text-align: center;
+      padding: 5px 8px 4px;
+      background: #f8fafc;
+      border-radius: 0;
+      border: 1px solid var(--border);
+      border-bottom: 2px solid var(--border-dark);
+      white-space: nowrap;
+    }
+
+    .heatmap-table th.ratio-header {
+      font-size: .7rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-align: center;
+      padding: 3px 6px 5px;
+      white-space: nowrap;
+    }
+
+    .heatmap-table th.metal-header {
+      font-size: .8rem;
+      font-weight: 700;
+      color: var(--text);
+      text-align: right;
+      padding: 0 10px 0 4px;
+      white-space: nowrap;
+    }
+
+    .heatmap-table th.corner { min-width: 52px; }
+
+    /* ── Data cells ── */
+    .heatmap-table td {
+      width: 75px;
+      height: 30px;
+      border-radius: 0;
+      text-align: center;
+      vertical-align: middle;
+      font-size: .68rem;
+      line-height: 1.45;
+      padding: 3px 4px;
+      cursor: default;
+      transition: filter .15s, transform .1s;
+      position: relative;
+      border: none;
+    }
+    .heatmap-table td:hover {
+      filter: brightness(.88);
+      transform: scale(1.06);
+      z-index: 2;
+    }
+
+    .heatmap-table td.missing {
+      background: var(--missing-bg) !important;
+      cursor: default;
+    }
+
+    #placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 60vh;
+      gap: 14px;
+      color: var(--muted);
+    }
+    #placeholder svg { opacity: .3; }
+    #placeholder p { font-size: .95rem; }
+
+    #tooltip {
+      position: fixed;
+      background: rgba(15,23,42,.93);
+      color: #f8fafc;
+      padding: 9px 13px;
+      border-radius: 9px;
+      font-size: .78rem;
+      pointer-events: none;
+      z-index: 9999;
+      display: none;
+      line-height: 1.65;
+      max-width: 230px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.3);
+    }
+    #tooltip .tt-title {
+      font-weight: 700;
+      font-size: .82rem;
+      margin-bottom: 4px;
+      color: #e2e8f0;
+    }
+    #tooltip .tt-row { display: flex; justify-content: space-between; gap: 12px; }
+    #tooltip .tt-label { color: #94a3b8; }
+    #tooltip .tt-val   { font-weight: 600; color: #f1f5f9; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ══════════════════════════════════════════════════════
+       SIDEBAR
+  ═══════════════════════════════════════════════════════ -->
+  <aside id="sidebar">
+
+    <h1>LDR Heatmap
+      <span>Assay Data Visualizer</span>
+    </h1>
+
+    <div>
+      <div class="section-label">Data File</div>
+      <div id="drop-zone" role="button" tabindex="0"
+           aria-label="Upload CSV or XLSX file">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none"
+             stroke="#94a3b8" stroke-width="1.6"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <p>Drop a <strong>.csv</strong> or <strong>.xlsx</strong> file here,
+           <br/>or <strong>click to browse</strong></p>
+      </div>
+      <input type="file" id="file-input" accept=".csv,.xlsx" />
+      <div id="status" style="margin-top:8px;">No file loaded.</div>
+    </div>
+
+    <div>
+      <div class="section-label">Show Values in Cells</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div class="toggle-row">
+          <input type="checkbox" id="toggle-r2" />
+          <label for="toggle-r2">Show R²</label>
+        </div>
+        <div class="toggle-row">
+          <input type="checkbox" id="toggle-ldr" />
+          <label for="toggle-ldr">Show LDR (ppm)</label>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Missing Data</div>
+      <div class="missing-swatch">
+        <div class="missing-swatch-box"></div>
+        <span>No data available for this combination</span>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div id="legend-outer">
+      <div class="section-label">Color Legend – LDR Width</div>
+      <canvas id="legend-canvas"></canvas>
+      <div class="legend-x-label">
+        Low 0 ← <strong>LDR Width (ppm)</strong> → 500 High
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ══════════════════════════════════════════════════════
+       MAIN
+  ═══════════════════════════════════════════════════════ -->
+  <main id="main">
+    <div id="main-header">
+      <h2>Heatmap View</h2>
+      <span id="file-badge"></span>
+    </div>
+
+    <div id="placeholder">
+      <svg width="88" height="88" viewBox="0 0 24 24" fill="none"
+           stroke="#94a3b8" stroke-width="1.1"
+           stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3"  y="3"  width="7" height="7" rx="1"/>
+        <rect x="14" y="3"  width="7" height="7" rx="1"/>
+        <rect x="3"  y="14" width="7" height="7" rx="1"/>
+        <rect x="14" y="14" width="7" height="7" rx="1"/>
+      </svg>
+      <p>Upload a <strong>.csv</strong> or <strong>.xlsx</strong>
+         file to generate heatmaps.</p>
+    </div>
+
+    <div id="heatmaps-container" style="display:none;"></div>
+  </main>
+
+</div>
+
+<div id="tooltip" role="tooltip" aria-live="polite"></div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════════════
+   1.  1D EXCEL-STYLE YELLOW-GREEN COLOR ENGINE  (LDR only)
+   ═══════════════════════════════════════════════════════════════════
+   Mirrors Excel's "Green–Yellow–Green" conditional format scale,
+   specifically the "3-color scale" default used in heatmaps:
+
+     LDR =   0  →  #FFFFFF  pure white (no signal)
+     LDR = 125  →  #EBFACC  very pale yellow-green
+     LDR = 250  →  #CCEDA0  light Excel yellow-green
+     LDR = 375  →  #9DC95A  medium Excel green
+     LDR = 500  →  #375623  Excel dark forest green
+
+   These hex values are taken directly from Excel's built-in
+   "Green" data-bar / color-scale palette.
+   ─────────────────────────────────────────────────────────────────── */
+
+const GREEN_STOPS = [
+  { t: 0.00, r: 255, g: 255, b: 255 },  // white
+  { t: 1.00, r:  110, g:  206, b:  178},  // #375623  Excel dark green
+];
+
+function ldrColor(ldrWidth) {
+  const t = Math.max(0, Math.min(1, (isNaN(ldrWidth) ? 0 : ldrWidth) / 500));
+
+  let lo = GREEN_STOPS[0];
+  let hi = GREEN_STOPS[GREEN_STOPS.length - 1];
+
+  for (let i = 0; i < GREEN_STOPS.length - 1; i++) {
+    if (t >= GREEN_STOPS[i].t && t <= GREEN_STOPS[i + 1].t) {
+      lo = GREEN_STOPS[i];
+      hi = GREEN_STOPS[i + 1];
+      break;
+    }
+  }
+
+  const span = hi.t - lo.t || 1;
+  const f    = (t - lo.t) / span;
+
+  return {
+    r: Math.round(lo.r + f * (hi.r - lo.r)),
+    g: Math.round(lo.g + f * (hi.g - lo.g)),
+    b: Math.round(lo.b + f * (hi.b - lo.b)),
+  };
+}
+
+function contrastText(r, g, b) {
+  const lin = c => {
+    c /= 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  // Slightly lower threshold so dark text is used on the lighter greens
+  return L > 0.28 ? '#1e293b' : '#ffffff';
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   2.  LEGEND  (1D horizontal bar)
+   ─────────────────────────────────────────────────────────────────── */
+
+function drawLegend() {
+  const canvas = document.getElementById('legend-canvas');
+
+  const BAR_W  = 220;
+  const BAR_H  = 22;
+  const PAD_T  = 6;
+  const PAD_B  = 20;
+  const PAD_LR = 6;
+
+  const W = PAD_LR * 2 + BAR_W;
+  const H = PAD_T + BAR_H + PAD_B;
+
+  canvas.width  = W;
+  canvas.height = H;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  // Draw gradient bar pixel by pixel
+  for (let px = 0; px < BAR_W; px++) {
+    const ldr = (px / (BAR_W - 1)) * 500;
+    const { r, g, b } = ldrColor(ldr);
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.fillRect(PAD_LR + px, PAD_T, 1, BAR_H);
+  }
+
+  // Border
+  ctx.strokeStyle = '#94a3b8';
+  ctx.lineWidth   = 1;
+  ctx.strokeRect(PAD_LR + 0.5, PAD_T + 0.5, BAR_W - 1, BAR_H - 1);
+
+  // Tick labels: 0, 250, 500
+  ctx.fillStyle    = '#475569';
+  ctx.font         = '9px Segoe UI, sans-serif';
+  ctx.textBaseline = 'top';
+
+  [0, 250, 500].forEach(val => {
+    const px = PAD_LR + (val / 500) * (BAR_W - 1);
+    ctx.textAlign = val === 0 ? 'left' : val === 500 ? 'right' : 'center';
+    ctx.fillText(val + ' ppm', px, PAD_T + BAR_H + 4);
+
+    ctx.beginPath();
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth   = 1;
+    ctx.moveTo(px, PAD_T + BAR_H);
+    ctx.lineTo(px, PAD_T + BAR_H + 3);
+    ctx.stroke();
+  });
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   3.  DATA PARSING
+   ─────────────────────────────────────────────────────────────────── */
+
+function cleanValue(v) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  if (s === '' || s === '-' || s === '–' || s === '—'
+      || s.toLowerCase() === 'n/a') return null;
+  return s;
+}
+
+function parseSetName(raw) {
+  if (!raw) return { metal: '', chelator: '', ratio: '' };
+  const s = String(raw).trim();
+  const m = s.match(/^([^/\s]+)\s*\/\s*([^\s]+)\s*(.*)$/);
+  if (m) return { metal: m[1].trim(), chelator: m[2].trim(), ratio: m[3].trim() };
+  return { metal: s, chelator: '', ratio: '' };
+}
+
+function parseLDR(raw) {
+  if (!raw) return { low: null, high: null, ldrWidth: 0, original: '' };
+  const s = String(raw).trim();
+  const m = s.match(/([\d.]+)\s*[–\-—]\s*([\d.]+)/);
+  if (m) {
+    const lo = parseFloat(m[1]);
+    const hi = parseFloat(m[2]);
+    return { low: lo, high: hi, ldrWidth: Math.abs(hi - lo), original: s };
+  }
+  return { low: null, high: null, ldrWidth: 0, original: s };
+}
+
+function parseTrialNumber(raw) {
+  if (!raw) return 0;
+  const m = String(raw).match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+function findColumn(header, ...candidates) {
+  for (const c of candidates) {
+    const found = header.find(h => h.trim().toLowerCase() === c.toLowerCase());
+    if (found) return found;
+  }
+  return null;
+}
+
+function transformData(rows) {
+  if (!rows || rows.length === 0)
+    throw new Error('File contains no data rows.');
+
+  const header = Object.keys(rows[0]);
+
+  const colSetName = findColumn(header, 'set name', 'setname', 'set_name');
+  const colTrial   = findColumn(header, 'trial');
+  const colR2      = findColumn(header,
+    'r2', 'r²', 'r^2', 'rsquared', 'r_squared', 'r-squared');
+  const colLDR     = findColumn(header,
+    'linear dynamic range (ppm)',
+    'linear dynamic range(ppm)',
+    'linear dynamic range',
+    'ldr (ppm)', 'ldr(ppm)', 'ldr');
+
+  const missing = [];
+  if (!colSetName) missing.push('Set Name');
+  if (!colTrial)   missing.push('Trial');
+  if (!colR2)      missing.push('R2');
+  if (!colLDR)     missing.push('Linear Dynamic Range (ppm)');
+
+  if (missing.length) {
+    throw new Error(
+      `Required column(s) not found: ${missing.join(', ')}.\n` +
+      `Detected columns: ${header.join(', ')}`
+    );
+  }
+
+  const records = [];
+  rows.forEach((row, idx) => {
+    const rawSet   = cleanValue(row[colSetName]);
+    const rawTrial = cleanValue(row[colTrial]);
+    const rawR2    = cleanValue(row[colR2]);
+    const rawLDR   = cleanValue(row[colLDR]);
+
+    if (!rawSet && !rawTrial) return;
+
+    const { metal, chelator, ratio } = parseSetName(rawSet);
+    const trialNum  = parseTrialNumber(rawTrial);
+    const r2Val     = rawR2 !== null ? parseFloat(rawR2) : NaN;
+    const { ldrWidth, original: ldrOriginal } = parseLDR(rawLDR);
+
+    records.push({
+      rowIndex:    idx,
+      setName:     rawSet    || '',
+      trial:       rawTrial  || `Trial ${trialNum}`,
+      trialNum,
+      metal,
+      chelator,
+      ratio,
+      r2:          isNaN(r2Val) ? null : r2Val,
+      ldrWidth:    isNaN(ldrWidth) ? 0 : ldrWidth,
+      ldrOriginal,
+      isMissing:   rawR2 === null && rawLDR === null,
+    });
+  });
+
+  if (records.length === 0)
+    throw new Error('No valid data rows found after parsing.');
+  return records;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   4.  FILE READING
+   ─────────────────────────────────────────────────────────────────── */
+
+function readFile(file) {
+  return new Promise((resolve, reject) => {
+    const ext    = file.name.split('.').pop().toLowerCase();
+    const reader = new FileReader();
+
+    if (ext === 'csv') {
+      reader.onload = e => {
+        const result = Papa.parse(e.target.result, {
+          header:          true,
+          skipEmptyLines:  true,
+          transformHeader: h => h.trim(),
+        });
+        if (result.errors.length && result.data.length === 0)
+          reject(new Error('CSV parse error: ' + result.errors[0].message));
+        else
+          resolve(result.data);
+      };
+      reader.onerror = () => reject(new Error('Failed to read file.'));
+      reader.readAsText(file);
+
+    } else if (ext === 'xlsx' || ext === 'xls') {
+      reader.onload = e => {
+        try {
+          const wb   = XLSX.read(e.target.result, { type: 'array' });
+          const ws   = wb.Sheets[wb.SheetNames[0]];
+          const data = XLSX.utils.sheet_to_json(ws, { defval: '' });
+          const cleaned = data.map(row => {
+            const out = {};
+            Object.keys(row).forEach(k => { out[k.trim()] = row[k]; });
+            return out;
+          });
+          resolve(cleaned);
+        } catch (err) {
+          reject(new Error('XLSX parse error: ' + err.message));
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file.'));
+      reader.readAsArrayBuffer(file);
+
+    } else {
+      reject(new Error('Unsupported file type. Please upload .csv or .xlsx.'));
+    }
+  });
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   5.  HEATMAP RENDERING
+   ─────────────────────────────────────────────────────────────────── */
+
+let globalRecords = [];
+
+function renderAll() {
+  if (!globalRecords.length) return;
+
+  const showR2  = document.getElementById('toggle-r2').checked;
+  const showLDR = document.getElementById('toggle-ldr').checked;
+
+  const container = document.getElementById('heatmaps-container');
+  container.innerHTML = '';
+
+  const trialMap = new Map();
+  globalRecords.forEach(rec => {
+    if (!trialMap.has(rec.trialNum)) trialMap.set(rec.trialNum, []);
+    trialMap.get(rec.trialNum).push(rec);
+  });
+  const sortedTrials = [...trialMap.keys()].sort((a, b) => a - b);
+
+  const allMetals    = [...new Set(globalRecords.map(r => r.metal))].sort();
+  const allChelators = [...new Set(globalRecords.map(r => r.chelator))].sort();
+
+  const chelatorRatios = new Map();
+  allChelators.forEach(ch => {
+    const ratios = [...new Set(
+      globalRecords.filter(r => r.chelator === ch).map(r => r.ratio)
+    )].sort((a, b) => {
+      const numA = parseFloat(a.replace(':', '.'));
+      const numB = parseFloat(b.replace(':', '.'));
+      return isNaN(numA) || isNaN(numB) ? a.localeCompare(b) : numA - numB;
+    });
+    chelatorRatios.set(ch, ratios);
+  });
+
+  sortedTrials.forEach(trialNum => {
+    const recs       = trialMap.get(trialNum);
+    const trialLabel = recs[0].trial || `Trial ${trialNum}`;
+
+    const lookup = new Map();
+    recs.forEach(r => lookup.set(`${r.metal}||${r.chelator}||${r.ratio}`, r));
+
+    const block = document.createElement('div');
+    block.className = 'trial-block';
+
+    const title = document.createElement('h3');
+    title.textContent = trialLabel;
+    block.appendChild(title);
+
+    const table = document.createElement('table');
+    table.className = 'heatmap-table';
+    table.setAttribute('role', 'grid');
+    table.setAttribute('aria-label', trialLabel);
+
+    const thead = document.createElement('thead');
+
+    const tr1    = document.createElement('tr');
+    const corner = document.createElement('th');
+    corner.className = 'corner';
+    corner.rowSpan   = 2;
+    tr1.appendChild(corner);
+
+    allChelators.forEach(ch => {
+      const ratios = chelatorRatios.get(ch);
+      const th     = document.createElement('th');
+      th.className = 'chelator-header';
+      th.colSpan   = ratios.length;
+      th.textContent = ch;
+      th.scope     = 'colgroup';
+      tr1.appendChild(th);
+    });
+    thead.appendChild(tr1);
+
+    const tr2 = document.createElement('tr');
+    allChelators.forEach(ch => {
+      chelatorRatios.get(ch).forEach(ratio => {
+        const th     = document.createElement('th');
+        th.className = 'ratio-header';
+        th.textContent = ratio || '—';
+        th.scope     = 'col';
+        tr2.appendChild(th);
+      });
+    });
+    thead.appendChild(tr2);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+
+    allMetals.forEach(metal => {
+      const tr = document.createElement('tr');
+
+      const metalTh     = document.createElement('th');
+      metalTh.className = 'metal-header';
+      metalTh.textContent = metal;
+      metalTh.scope     = 'row';
+      tr.appendChild(metalTh);
+
+      allChelators.forEach(ch => {
+        chelatorRatios.get(ch).forEach(ratio => {
+          const td  = document.createElement('td');
+          const key = `${metal}||${ch}||${ratio}`;
+          const rec = lookup.get(key);
+
+          if (!rec || rec.isMissing ||
+              (rec.r2 === null && rec.ldrWidth === 0)) {
+            td.className = 'missing';
+          } else {
+            const ldr = rec.ldrWidth !== null ? rec.ldrWidth : 0;
+            const { r, g, b } = ldrColor(ldr);
+            td.style.backgroundColor = `rgb(${r},${g},${b})`;
+            td.style.color           = contrastText(r, g, b);
+
+            const lines = [];
+            if (showR2)  lines.push(
+              rec.r2 !== null ? truncateToFixed(rec.r2, 3) : 'N/A');
+            if (showLDR) lines.push(rec.ldrOriginal || 'N/A');
+
+            if (lines.length) {
+              td.innerHTML = lines
+                .map(l => `<span style="display:block;">${escHtml(l)}</span>`)
+                .join('');
+            }
+
+            td.addEventListener('mouseenter', e => showTooltip(e, rec));
+            td.addEventListener('mousemove',  moveTooltip);
+            td.addEventListener('mouseleave', hideTooltip);
+          }
+
+          tr.appendChild(td);
+        });
+      });
+
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    block.appendChild(table);
+    container.appendChild(block);
+  });
+
+  document.getElementById('placeholder').style.display = 'none';
+  container.style.display = 'flex';
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   6.  TOOLTIP
+   ─────────────────────────────────────────────────────────────────── */
+
+const tooltip = document.getElementById('tooltip');
+
+function formatTooltipNumber(value) {
+  if (value === null || value === undefined || value === '') return 'N/A';
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  return num.toLocaleString(undefined, {
+    maximumFractionDigits: 3,
+    minimumFractionDigits: 0,
+  });
+}
+
+function showTooltip(e, rec) {
+  const r2Str  = rec.r2 !== null ? String(rec.r2) : 'N/A';
+  const ldrStr = rec.ldrOriginal || 'N/A';
+  const wStr   = rec.ldrWidth != null
+    ? `${formatTooltipNumber(rec.ldrWidth)} ppm` : 'N/A';
+
+  tooltip.innerHTML = `
+    <div class="tt-title">${escHtml(rec.setName)}</div>
+    <div class="tt-row">
+      <span class="tt-label">Trial</span>
+      <span class="tt-val">${escHtml(rec.trial)}</span>
+    </div>
+    <div class="tt-row">
+      <span class="tt-label">Metal</span>
+      <span class="tt-val">${escHtml(rec.metal)}</span>
+    </div>
+    <div class="tt-row">
+      <span class="tt-label">Chelator</span>
+      <span class="tt-val">${escHtml(rec.chelator)}</span>
+    </div>
+    <div class="tt-row">
+      <span class="tt-label">Ratio</span>
+      <span class="tt-val">${escHtml(rec.ratio)}</span>
+    </div>
+    <div class="tt-row">
+      <span class="tt-label">R²</span>
+      <span class="tt-val">${r2Str}</span>
+    </div>
+    <div class="tt-row">
+      <span class="tt-label">LDR</span>
+      <span class="tt-val">${escHtml(ldrStr)}</span>
+    </div>
+    <div class="tt-row">
+      <span class="tt-label">LDR Width</span>
+      <span class="tt-val">${wStr}</span>
+    </div>
+  `;
+  tooltip.style.display = 'block';
+  moveTooltip(e);
+}
+
+function moveTooltip(e) {
+  const x = e.clientX + 16;
+  const y = e.clientY + 16;
+  tooltip.style.left = Math.min(x, window.innerWidth  - 250) + 'px';
+  tooltip.style.top  = Math.min(y, window.innerHeight - 160) + 'px';
+}
+
+function hideTooltip() { tooltip.style.display = 'none'; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   7.  UTILITIES
+   ─────────────────────────────────────────────────────────────────── */
+
+function truncateToFixed(num, decimals) {
+  const factor = Math.pow(10, decimals);
+  return (Math.floor(num * factor) / factor).toFixed(decimals);
+}
+
+function escHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function setStatus(msg, type = '') {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className   = type;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   8.  EVENT WIRING
+   ─────────────────────────────────────────────────────────────────── */
+
+async function handleFile(file) {
+  if (!file) return;
+  setStatus(`Loading "${file.name}"…`);
+  try {
+    const rawRows = await readFile(file);
+    globalRecords = transformData(rawRows);
+
+    const badge = document.getElementById('file-badge');
+    badge.textContent   = file.name;
+    badge.style.display = 'inline';
+
+    setStatus(`✓ ${globalRecords.length} rows loaded`, 'ok');
+    renderAll();
+  } catch (err) {
+    setStatus('⚠ ' + err.message, 'error');
+    console.error(err);
+  }
+}
+
+document.getElementById('file-input')
+  .addEventListener('change', e => handleFile(e.target.files[0]));
+
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('click', () =>
+  document.getElementById('file-input').click());
+dropZone.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ')
+    document.getElementById('file-input').click();
+});
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () =>
+  dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  handleFile(e.dataTransfer.files[0]);
+});
+
+document.getElementById('toggle-r2')
+  .addEventListener('change', renderAll);
+document.getElementById('toggle-ldr')
+  .addEventListener('change', renderAll);
+
+drawLegend();
+</script>
+</body>
+</html>

@@ -1,0 +1,1771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Calibration Curve Tool</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; color: #1a202c; min-height: 100vh; }
+
+#page1 {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; min-height: 100vh; padding: 40px 20px;
+}
+.upload-card {
+  background: #fff; border-radius: 16px; padding: 60px 48px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.10); max-width: 520px; width: 100%;
+  text-align: center;
+}
+.upload-card h1 { font-size: 1.8rem; margin-bottom: 8px; color: #2d3748; }
+.upload-card p  { color: #718096; margin-bottom: 32px; font-size: .95rem; }
+.drop-zone {
+  border: 2px dashed #a0aec0; border-radius: 12px; padding: 48px 24px;
+  cursor: pointer; transition: all .2s; background: #f7fafc;
+}
+.drop-zone:hover, .drop-zone.drag-over { border-color: #4299e1; background: #ebf8ff; }
+.drop-zone svg { width: 48px; height: 48px; color: #a0aec0; margin-bottom: 12px; }
+.drop-zone p { color: #718096; font-size: .9rem; }
+.drop-zone strong { color: #4299e1; }
+#fileInput { display: none; }
+
+.mode-toggle {
+  display: inline-flex; gap: 8px; justify-content: center; margin-bottom: 20px;
+}
+.mode-btn {
+  border: 1px solid #cbd5e0; background: #fff; color: #4a5568; padding: 8px 14px;
+  border-radius: 999px; cursor: pointer; font-size: .9rem; font-weight: 600;
+  transition: all .2s ease;
+}
+.mode-btn.active {
+  background: #4299e1; color: #fff; border-color: #4299e1;
+}
+.mode-btn:hover { transform: translateY(-1px); }
+
+#manualPanel {
+  margin-top: 16px; display: none;
+}
+.manual-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.manual-column label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: .95rem;
+  font-weight: 700;
+  color: #2d3748;
+}
+#manualPanel textarea {
+  width: 100%; min-height: 150px; border: 1px solid #e2e8f0; border-radius: 10px;
+  padding: 12px; font-family: 'Consolas', 'Courier New', monospace; font-size: .9rem;
+  resize: vertical; line-height: 1.45; background: #fcfdff;
+}
+#manualPanel textarea:focus { outline: none; border-color: #4299e1; box-shadow: 0 0 0 3px rgba(66,153,225,.12); }
+.manual-hint {
+  margin-top: 8px; font-size: .8rem; color: #718096; line-height: 1.4;
+}
+@media (max-width: 780px) {
+  .manual-grid { grid-template-columns: 1fr; }
+}
+
+.trials-row {
+  display: flex; align-items: center; justify-content: center;
+  gap: 10px; margin: 20px 0 0;
+}
+.trials-row label { font-size: .93rem; color: #4a5568; font-weight: 600; }
+.trials-input {
+  width: 72px; border: 1px solid #e2e8f0; border-radius: 6px;
+  padding: 7px 10px; font-size: .95rem; text-align: center; color: #2d3748;
+  transition: border-color .2s;
+}
+.trials-input:focus { outline: none; border-color: #4299e1; }
+
+.btn-primary {
+  background: #4299e1; color: #fff; border: none; border-radius: 8px;
+  padding: 12px 32px; font-size: 1rem; cursor: pointer; margin-top: 24px;
+  transition: background .2s; font-weight: 600;
+}
+.btn-primary:hover { background: #3182ce; }
+.btn-primary:disabled { background: #a0aec0; cursor: not-allowed; }
+#fileName  { margin-top: 12px; font-size: .85rem; color: #4a5568; min-height: 20px; }
+#errorMsg  { color: #e53e3e; margin-top: 10px; font-size: .85rem; min-height: 20px; }
+
+#page2 { display: none; padding: 32px 24px; max-width: 1900px; margin: 0 auto; }
+.page2-header {
+  display: flex; align-items: center; gap: 16px; margin-bottom: 32px; flex-wrap: wrap;
+}
+.page2-header h2 { font-size: 1.5rem; color: #2d3748; flex: 1; }
+.btn-back {
+  background: #edf2f7; color: #4a5568; border: none; border-radius: 8px;
+  padding: 8px 20px; cursor: pointer; font-size: .9rem; font-weight: 600;
+  transition: background .2s;
+}
+.btn-back:hover { background: #e2e8f0; }
+.btn-save {
+  background: #667eea; color: #fff; border: none; border-radius: 8px;
+  padding: 8px 20px; cursor: pointer; font-size: .9rem; font-weight: 600;
+  transition: background .2s;
+}
+.btn-save:hover { background: #5a67d8; }
+
+.graph-card {
+  background: #fff; border-radius: 14px; padding: 24px 24px 18px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.08); margin-bottom: 36px;
+}
+.graph-card-header {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap;
+}
+.set-label { font-weight: 700; color: #2d3748; font-size: 1.05rem; white-space: nowrap; }
+.name-input {
+  border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 12px;
+  font-size: .9rem; flex: 1; min-width: 160px; color: #2d3748; transition: border-color .2s;
+}
+.name-input:focus { outline: none; border-color: #4299e1; }
+
+.trials-strip {
+  display: flex; align-items: stretch; gap: 0; overflow-x: auto; padding-bottom: 8px;
+}
+.trial-panel {
+  flex: 0 0 auto; width: 540px; min-width: 320px;
+  border: 1px solid #e2e8f0; border-radius: 10px;
+  padding: 14px 14px 10px; background: #fafbfc;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.trial-panel.is-invalid {
+  border-color: #fc8181; background: #fff5f5;
+}
+.trial-panel-header {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.trial-label { font-size: .82rem; font-weight: 700; color: #4a5568; white-space: nowrap; }
+.invalid-label {
+  display: flex; align-items: center; gap: 4px;
+  font-size: .78rem; color: #c53030; font-weight: 600; cursor: pointer;
+  white-space: nowrap;
+}
+.invalid-label input[type=checkbox] {
+  width: 14px; height: 14px; cursor: pointer; accent-color: #c53030;
+}
+.fit-select {
+  border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px 8px;
+  font-size: .82rem; color: #2d3748; background: #fff; cursor: pointer; flex: 1;
+}
+.graph-wrap { position: relative; height: 300px; min-height: 300px; }
+.graph-wrap canvas { width: 100% !important; height: 100% !important; }
+.graph-meta {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  flex-wrap: wrap; gap: 6px;
+}
+.graph-stats { display: flex; flex-direction: column; gap: 3px; }
+.r2-badge {
+  background: #ebf8ff; color: #2b6cb0; border-radius: 6px;
+  padding: 4px 12px; font-size: .95rem; font-weight: 700; display: inline-block;
+}
+.r2-badge.invalid { background: #fff5f5; color: #c53030; }
+.formula-text {
+  font-size: .75rem; color: #4a5568; padding-left: 4px;
+  font-style: italic; min-height: 14px;
+}
+.graph-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.btn-ctrl {
+  background: #edf2f7; border: none; border-radius: 6px;
+  padding: 5px 11px; cursor: pointer; font-size: .78rem; font-weight: 600;
+  color: #4a5568; transition: background .2s;
+}
+.btn-ctrl:hover { background: #e2e8f0; }
+.btn-ctrl.restart { color: #c53030; }
+.hint { font-size: .72rem; color: #a0aec0; }
+
+.copy-col {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 8px; padding: 0 6px; flex-shrink: 0;
+}
+.btn-copy {
+  background: #ebf8ff; border: 1px solid #bee3f8; border-radius: 8px;
+  padding: 8px 10px; cursor: pointer; font-size: 1rem; font-weight: 700;
+  color: #2b6cb0; transition: background .2s, transform .1s; line-height: 1;
+}
+.btn-copy:hover { background: #bee3f8; transform: scale(1.08); }
+.copy-label { font-size: .65rem; color: #a0aec0; text-align: center; line-height: 1.3; }
+
+.export-section {
+  background: #fff; border-radius: 14px; padding: 28px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.08); margin-bottom: 40px;
+}
+.export-section h3 { font-size: 1.1rem; color: #2d3748; margin-bottom: 16px; }
+.export-options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+.export-option-group { display: flex; flex-direction: column; gap: 4px; }
+.export-options label {
+  display: flex; align-items: center; gap: 10px;
+  font-size: .93rem; color: #4a5568; cursor: pointer;
+}
+.export-options input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
+.export-desc { font-size: .78rem; color: #a0aec0; padding-left: 26px; font-style: italic; }
+.btn-export {
+  background: #38a169; color: #fff; border: none; border-radius: 8px;
+  padding: 12px 32px; font-size: 1rem; cursor: pointer; font-weight: 700;
+  transition: background .2s;
+}
+.btn-export:hover { background: #2f855a; }
+
+.spinner-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(255,255,255,.75); z-index: 999;
+  align-items: center; justify-content: center; flex-direction: column; gap: 16px;
+}
+.spinner-overlay.active { display: flex; }
+.spinner {
+  width: 48px; height: 48px; border: 5px solid #e2e8f0;
+  border-top-color: #4299e1; border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55);
+  z-index: 1000; display: flex; align-items: center; justify-content: center;
+}
+.modal-box {
+  background: #fff; border-radius: 16px; width: 92vw; max-width: 1300px;
+  max-height: 90vh; display: flex; flex-direction: column;
+  box-shadow: 0 8px 40px rgba(0,0,0,.25); overflow: hidden;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 24px; border-bottom: 1px solid #e2e8f0;
+}
+.modal-body {
+  display: flex; flex: 1; overflow: hidden; gap: 0;
+}
+.modal-chart-wrap {
+  flex: 1; padding: 20px; display: flex; flex-direction: column; gap: 10px;
+  min-width: 0;
+}
+.modal-side {
+  width: 340px; flex-shrink: 0; border-left: 1px solid #e2e8f0;
+  padding: 20px; display: flex; flex-direction: column; gap: 12px;
+  overflow-y: auto; background: linear-gradient(180deg, #fbfcfe 0%, #f6f9fc 100%);
+}
+.modal-side-card {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+  padding: 14px; box-shadow: 0 2px 8px rgba(15,23,42,.04);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.modal-side-heading {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+}
+.modal-side-heading h3 {
+  font-size: .95rem; color: #2d3748; margin-bottom: 3px;
+}
+.modal-side-heading p {
+  font-size: .78rem; color: #718096; line-height: 1.45;
+}
+.modal-status-pill {
+  flex-shrink: 0; padding: 4px 8px; border-radius: 999px;
+  font-size: .72rem; font-weight: 700; color: #2b6cb0; background: #ebf8ff;
+  white-space: nowrap;
+}
+.modal-actions {
+  display: flex; gap: 8px;
+}
+.modal-action-btn {
+  border: 1px solid #e2e8f0; border-radius: 8px; padding: 7px 10px;
+  font-size: .8rem; font-weight: 700; cursor: pointer; transition: all .15s ease;
+}
+.modal-action-btn:hover { transform: translateY(-1px); }
+.modal-action-btn.primary {
+  background: #4299e1; color: #fff; border-color: #4299e1;
+}
+.modal-action-btn.primary:hover { background: #3182ce; }
+.modal-action-btn.secondary {
+  background: #fff; color: #4a5568;
+}
+.modal-action-btn.secondary:hover { background: #f7fafc; }
+.modal-side-hint {
+  font-size: .8rem; color: #4a5568; line-height: 1.45;
+}
+.modal-helper-row {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.modal-helper-chip {
+  font-size: .72rem; color: #4a5568; background: #f7fafc; border: 1px solid #e2e8f0;
+  border-radius: 999px; padding: 3px 8px;
+}
+.modal-chart-wrap canvas {
+  flex: 1;
+  min-height: 320px;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 4 / 3;
+}
+
+#intensityInput {
+  width: 100%; min-height: 118px; border: 1px solid #e2e8f0;
+  border-radius: 8px; padding: 10px; font-size: .9rem; resize: vertical;
+  font-family: 'Consolas', 'Courier New', monospace; background: #fff;
+  line-height: 1.45; transition: border-color .2s, box-shadow .2s;
+}
+#intensityInput:focus {
+  outline: none; border-color: #4299e1; box-shadow: 0 0 0 3px rgba(66,153,225,.12);
+}
+.results-table-wrap { overflow: auto; border: 1px solid #e2e8f0; border-radius: 10px; }
+#resultsTable { width: 100%; border-collapse: collapse; font-size: .84rem; }
+#resultsTable th, #resultsTable td {
+  border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; vertical-align: middle;
+}
+#resultsTable th { background: #ebf8ff; color: #2b6cb0; font-weight: 700; position: sticky; top: 0; z-index: 1; }
+#resultsTable td:nth-child(3), #resultsTable th:nth-child(3) { text-align: right; }
+.sample-marker-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid #e2e8f0; border-radius: 999px; padding: 3px 8px;
+  background: #fff; font-size: .78rem; font-weight: 600; white-space: nowrap;
+}
+.sample-marker-chip.neutral { color: #718096; border-color: #e2e8f0; }
+.sample-marker-icon { font-size: .92rem; line-height: 1; }
+
+.modal-info-bar {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  background: #f7fafc; border: 1px solid #e2e8f0;
+  border-radius: 10px; padding: 12px 16px;
+}
+.modal-info-item {
+  display: flex; flex-direction: column; gap: 2px; min-width: 120px;
+}
+.modal-info-label {
+  font-size: .72rem; font-weight: 700; color: #a0aec0;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.modal-formula-display {
+  font-size: .92rem; font-style: italic; color: #2d3748; font-weight: 600;
+}
+.modal-fit-badge {
+  font-size: .85rem; font-weight: 700; color: #553c9a;
+  background: #faf5ff; border-radius: 5px; padding: 2px 8px;
+  display: inline-block;
+}
+
+
+</style>
+</head>
+<body>
+
+<div class="spinner-overlay" id="spinner">
+  <div class="spinner"></div>
+  <p style="color:#4a5568;font-weight:600;">Processing&#8230;</p>
+</div>
+
+<!-- PAGE 1 -->
+<div id="page1">
+  <div class="upload-card">
+    <h1>Calibration Curve Tool</h1>
+    <p>Start from an Excel or JSON file, or paste your own two-column calibration data.</p>
+    <div class="mode-toggle" id="modeToggle">
+      <button class="mode-btn active" id="modeFileBtn" type="button">Upload file</button>
+      <button class="mode-btn" id="modePasteBtn" type="button">Paste data</button>
+    </div>
+
+    <div id="filePanel">
+      <div class="drop-zone" id="dropZone">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5
+               m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+        </svg>
+        <p>Drag &amp; drop your file here, or <strong>click to browse</strong></p>
+        <p style="font-size:.8rem;margin-top:6px;">Supports .xlsx and .json files</p>
+      </div>
+      <input type="file" id="fileInput"/>
+      <div class="trials-row" id="trialsRow">
+        <label for="numTrialsInput">Number of Trials:</label>
+        <input class="trials-input" type="number" id="numTrialsInput" min="1" max="20" value="1"/>
+      </div>
+    </div>
+
+    <div id="manualPanel">
+      <div class="manual-grid">
+        <div class="manual-column">
+          <label for="manualConc">Concentration (ppm)</label>
+          <textarea id="manualConc" placeholder="0.1&#10;0.2&#10;0.5&#10;1.0"></textarea>
+        </div>
+        <div class="manual-column">
+          <label for="manualIntensity">Intensity</label>
+          <textarea id="manualIntensity" placeholder="120&#10;240&#10;600&#10;1100"></textarea>
+        </div>
+      </div>
+      <p class="manual-hint">Paste concentration values in the left box and intensity values in the right box. Each line in both boxes should correspond to the same sample.</p>
+    </div>
+
+    <div id="fileName"></div>
+    <div id="errorMsg"></div>
+    <button class="btn-primary" id="processBtn" disabled>Process File &#8594;</button>
+  </div>
+</div>
+
+<!-- PAGE 2 -->
+<div id="page2">
+  <div class="page2-header">
+    <button class="btn-back" id="backBtn">&#8592; Back</button>
+    <h2>Calibration Curves</h2>
+    <button class="btn-save" id="saveSessionBtn">&#128190; Save Session</button>
+  </div>
+  <div id="graphsContainer"></div>
+  <div class="export-section">
+    <h3>Export</h3>
+    <div class="export-options">
+      <div class="export-option-group">
+        <label><input type="checkbox" id="expSummary" checked> Summary Table</label>
+        <p class="export-desc">Exports a table with each dataset's name, trial, R², linear dynamic range, and linearity type.</p>
+      </div>
+      <div class="export-option-group">
+        <label><input type="checkbox" id="expCurves"> Calibration Curves</label>
+        <p class="export-desc">Exports a plot for each dataset/trial showing included data points and dashed line of best fit with R² and formula.</p>
+      </div>
+      <div class="export-option-group">
+        <label><input type="checkbox" id="expData"> Data Points Table</label>
+        <p class="export-desc">Exports a table listing all included data points (Conc. and Intensity) for each dataset and trial.</p>
+      </div>
+    </div>
+    <button class="btn-export" id="exportBtn">Export &#8595;</button>
+  </div>
+</div>
+
+<div id="useModal" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span id="modalTitle">Set — Trial</span>
+      <button id="modalCloseBtn">&times;</button>
+    </div>
+    <div class="modal-body">
+      <!-- Left: enlarged chart -->
+      <div class="modal-chart-wrap">
+        <canvas id="modalCanvas"></canvas>
+        <div class="modal-meta">
+        <div class="modal-info-bar">
+            <div class="modal-info-item">
+            <span class="modal-info-label">R²</span>
+            <span id="modalR2Badge" class="r2-badge"></span>
+            </div>
+            <div class="modal-info-item">
+            <span class="modal-info-label">Equation</span>
+            <span id="modalFormula" class="modal-formula-display"></span>
+            </div>
+            <div class="modal-info-item">
+            <span class="modal-info-label">Fit Type</span>
+            <span id="modalFitType" class="modal-fit-badge"></span>
+            </div>
+            <div class="modal-info-item">
+            <span class="modal-info-label">Cal. Range</span>
+            <span id="modalRange" class="formula-text"></span>
+            </div>
+        </div>
+        </div>
+
+      </div>
+      <!-- Right: input/output table -->
+      <div class="modal-side">
+        <div class="modal-side-card">
+          <div class="modal-side-heading">
+            <div>
+              <h3>Sample values</h3>
+            </div>
+            <span id="modalStatusBadge" class="modal-status-pill">Ready</span>
+          </div>
+          <div class="modal-actions">
+            <button id="clearSamplesBtn" class="modal-action-btn secondary" type="button">Clear</button>
+            <button id="exampleSamplesBtn" class="modal-action-btn primary" type="button">Example</button>
+          </div>
+          <textarea id="intensityInput" placeholder="Example: 1200&#10;1450&#10;1700"></textarea>
+        </div>
+        <div class="results-table-wrap">
+          <table id="resultsTable">
+            <thead>
+              <tr><th>Sample</th><th>Intensity</th><th>Est. Conc. (ppm)</th></tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   DATA MODEL
+   dataSets[setIdx][trialIdx] → [{x,y}, …]
+   chartStates[setIdx][trialIdx] → TrialState
+   chartInstances[setIdx][trialIdx] → Chart|null
+   setNames[setIdx] → string
+═══════════════════════════════════════════════════════════ */
+let dataSets       = [];
+let chartStates    = [];
+let chartInstances = [];
+let setNames       = [];
+let numTrials      = 1;
+let selectedFile   = null;
+let modalChartInstance = null;
+let modalState = null; // { si, ti }
+let intensityInputTimer = null;
+let inputMode = 'file';
+
+const dropZone       = document.getElementById('dropZone');
+const modalStatusBadge = document.getElementById('modalStatusBadge');
+const fileInput      = document.getElementById('fileInput');
+const processBtn     = document.getElementById('processBtn');
+const fileNameEl     = document.getElementById('fileName');
+const errorMsgEl     = document.getElementById('errorMsg');
+const trialsRow      = document.getElementById('trialsRow');
+const numTrialsInput = document.getElementById('numTrialsInput');
+const modeFileBtn    = document.getElementById('modeFileBtn');
+const modePasteBtn   = document.getElementById('modePasteBtn');
+const filePanel      = document.getElementById('filePanel');
+const manualPanel    = document.getElementById('manualPanel');
+const manualConc     = document.getElementById('manualConc');
+const manualIntensity = document.getElementById('manualIntensity');
+
+/* ── Input mode selection ── */
+function updateProcessButtonLabel() {
+  processBtn.textContent = inputMode === 'paste' ? 'Process Data →' : 'Process File →';
+}
+
+function updateProcessButtonState() {
+  if (inputMode === 'paste') {
+    processBtn.disabled = !manualConc.value.trim() || !manualIntensity.value.trim();
+  } else {
+    processBtn.disabled = !selectedFile;
+  }
+}
+
+function setInputMode(mode) {
+  inputMode = mode;
+  modeFileBtn.classList.toggle('active', mode === 'file');
+  modePasteBtn.classList.toggle('active', mode === 'paste');
+  filePanel.style.display = mode === 'file' ? 'block' : 'none';
+  manualPanel.style.display = mode === 'paste' ? 'block' : 'none';
+  if (mode === 'file') {
+    trialsRow.style.display = selectedFile && selectedFile.name.toLowerCase().endsWith('.json') ? 'none' : 'flex';
+  } else {
+    trialsRow.style.display = 'none';
+  }
+  updateProcessButtonLabel();
+  updateProcessButtonState();
+}
+
+modeFileBtn.addEventListener('click', () => setInputMode('file'));
+modePasteBtn.addEventListener('click', () => setInputMode('paste'));
+manualConc.addEventListener('input', updateProcessButtonState);
+manualIntensity.addEventListener('input', updateProcessButtonState);
+
+/* ── File selection ── */
+dropZone.addEventListener('click', () => {
+  if (inputMode !== 'file') return;
+  fileInput.click();
+});
+dropZone.addEventListener('dragover', e => { if (inputMode !== 'file') return; e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  if (inputMode !== 'file') return;
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) setFile(fileInput.files[0]);
+  fileInput.value = '';
+});
+
+function setFile(f) {
+  errorMsgEl.textContent = '';
+  const lower = f.name.toLowerCase();
+  if (!lower.endsWith('.xlsx') && !lower.endsWith('.json')) {
+    errorMsgEl.textContent = 'Please upload a valid .xlsx or .json session file.';
+    processBtn.disabled = true; selectedFile = null; return;
+  }
+  selectedFile = f;
+  fileNameEl.textContent = '\uD83D\uDCC4 ' + f.name;
+  updateProcessButtonState();
+  trialsRow.style.display = lower.endsWith('.json') ? 'none' : 'flex';
+}
+
+/* ── Process button ── */
+processBtn.addEventListener('click', () => {
+  errorMsgEl.textContent = '';
+
+  if (inputMode === 'paste') {
+    const t = parseInt(numTrialsInput.value, 10);
+    if (isNaN(t) || t < 1 || t > 20) {
+      errorMsgEl.textContent = 'Number of Trials must be between 1 and 20.'; return;
+    }
+    numTrials = 1;
+    showSpinner(true);
+    setTimeout(() => {
+      parseManualData(manualConc.value, manualIntensity.value);
+      showSpinner(false);
+    }, 50);
+    return;
+  }
+
+  if (!selectedFile) {
+    errorMsgEl.textContent = 'Please choose a file or switch to paste mode.'; return;
+  }
+  const t = parseInt(numTrialsInput.value, 10);
+  if (isNaN(t) || t < 1 || t > 20) {
+    errorMsgEl.textContent = 'Number of Trials must be between 1 and 20.'; return;
+  }
+  numTrials = t;
+  showSpinner(true);
+  setTimeout(() => {
+    selectedFile.name.toLowerCase().endsWith('.json')
+      ? loadSession(selectedFile)
+      : parseXLSX(selectedFile);
+  }, 50);
+});
+
+const SAMPLE_COLORS = ['#f7c38b', '#9ec5fe', '#b9e7c4', '#f2b6b6', '#d9c3f7', '#b9def5', '#f8d8a8', '#bfe2dc', '#e6c8f8', '#f4c8d4'];
+
+function darkenColor(hex, amount = 0.2) {
+  const clean = hex.replace('#', '');
+  const value = clean.length === 3
+    ? clean.split('').map(ch => ch + ch).join('')
+    : clean;
+  const num = parseInt(value, 16);
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  const mix = (channel) => Math.max(0, Math.min(255, Math.round(channel * (1 - amount))));
+  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+}
+
+function getAxisRange(values) {
+  const nums = values.filter(v => Number.isFinite(v));
+  if (nums.length === 0) return { min: 0, max: 1 };
+  const min = Math.min(...nums);
+  const max = Math.max(...nums);
+  if (max === min) {
+    const pad = Math.max(Math.abs(max) * 0.2, 1);
+    return { min: min - pad, max: max + pad };
+  }
+  const span = max - min;
+  const pad = span * 0.08 || Math.max(Math.abs(max) * 0.08, 1);
+  return { min: min - pad, max: max + pad };
+}
+
+function getSampleColor(index) {
+  return SAMPLE_COLORS[index % SAMPLE_COLORS.length];
+}
+
+function buildSampleDataset(samplePoints) {
+  const pointStyles = samplePoints.map((_, idx) => {
+    const fill = getSampleColor(idx);
+    return {
+      backgroundColor: fill,
+      borderColor: darkenColor(fill, 0.28),
+      borderWidth: 1.2
+    };
+  });
+
+  return {
+    label: 'Samples',
+    data: samplePoints,
+    pointRadius: 7,
+    pointHoverRadius: 9,
+    pointStyle: 'triangle',
+    showLine: false,
+    order: 0,
+    pointBackgroundColor: pointStyles.map(s => s.backgroundColor),
+    pointBorderColor: pointStyles.map(s => s.borderColor),
+    pointBorderWidth: pointStyles.map(s => s.borderWidth)
+  };
+}
+
+function formatPointTooltip(raw) {
+  if (!raw) return '';
+  const conc = Number.isFinite(raw.x) ? raw.x : null;
+  const intensity = Number.isFinite(raw.y) ? raw.y : null;
+  const parts = [];
+  if (intensity !== null) parts.push(`Intensity: ${intensity}`);
+  if (conc !== null) parts.push(`Conc. (ppm): ${conc}`);
+  return parts.join(' | ');
+}
+
+function openUseModal(si, ti) {
+  modalState = { si, ti };
+  const state = chartStates[si][ti];
+
+  // Set title and meta
+  document.getElementById('modalTitle').textContent =
+    `${setNames[si] || 'Set '+(si+1)} — Trial ${ti+1}`;
+
+  const included = state.originalPoints.filter((_,i) => !state.excluded.has(i));
+  const fit = (!state.invalid && included.length >= 2)
+    ? (state.fitType === 'linear' ? linReg(included) : quadReg(included))
+    : null;
+  const r2 = fit ? calcR2(included, fit.predict) : NaN;
+
+  document.getElementById('modalR2Badge').textContent =
+    state.invalid ? 'R² = —' : isNaN(r2) ? 'R² = —' : 'R² = ' + r2.toFixed(4);
+  document.getElementById('modalFormula').textContent =
+    state.invalid ? '' : buildFormulaString(fit, state.fitType);
+    document.getElementById('modalFitType').textContent =
+    state.invalid ? '—' : (state.fitType === 'linear' ? 'Linear' : 'Quadratic');
+
+  const xs = included.map(p => p.x);
+  const calMin = xs.length ? Math.min(...xs) : null;
+  const calMax = xs.length ? Math.max(...xs) : null;
+  document.getElementById('modalRange').textContent =
+    calMin !== null
+      ? `Calibration range: ${sigFig(calMin,3)} – ${sigFig(calMax,3)} ppm`
+      : '';
+
+  // ── RESTORE saved inputs and results ──
+  document.getElementById('intensityInput').value = state.sampleInputs || '';
+
+  // Restore table if there were previous inputs
+  if (state.sampleInputs) {
+    processIntensityInput();   // ← re-runs calculation, restores table + chart
+  } else {
+    document.getElementById('resultsBody').innerHTML = '';
+    renderModalChart(si, ti, []);
+  }
+
+  document.getElementById('useModal').style.display = 'flex';
+}
+
+function renderModalChart(si, ti, samplePoints) {
+  const state    = chartStates[si][ti];
+  const included = state.originalPoints.filter((_,i) => !state.excluded.has(i));
+  const fit = (!state.invalid && included.length >= 2)
+    ? (state.fitType === 'linear' ? linReg(included) : quadReg(included))
+    : null;
+
+  const src  = included.length > 0 ? included : state.originalPoints;
+  const xRange = getAxisRange(src.map(p=>p.x));
+  const yRange = getAxisRange(src.map(p=>p.y));
+  const axXmin = xRange.min, axXmax = xRange.max;
+  const axYmin = yRange.min, axYmax = yRange.max;
+
+  const fitLine = [];
+  if (fit) for (let i=0;i<=120;i++){
+    const x = axXmin + (axXmax-axXmin)*i/120;
+    fitLine.push({x, y: fit.predict(x)});
+  }
+
+  if (modalChartInstance) { modalChartInstance.destroy(); modalChartInstance = null; }
+
+  const ctx = document.getElementById('modalCanvas').getContext('2d');
+  modalChartInstance = new Chart(ctx, {
+    type: 'scatter',
+    data: { datasets: [
+      { label: 'Calibration', data: included,
+        backgroundColor: '#4299e1', borderColor: '#2b6cb0',
+        pointRadius: 7, pointHoverRadius: 9, pointStyle: 'circle', showLine: false, order: 2 },
+      { label: 'Fit', data: fitLine, type: 'line',
+        borderColor: '#e53e3e', borderWidth: 2, borderDash: [8,5],
+        pointRadius: 0, fill: false, tension: 0, order: 1 },
+      buildSampleDataset(samplePoints)
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 220 },
+      layout: { padding: { top: 8, right: 8, bottom: 8, left: 8 } },
+      scales: {
+        x: { type:'linear', min:axXmin, max:axXmax,
+             title:{display:true, text:'Conc. (ppm)', font:{size:13}},
+             grid:{color:'#edf2f7'}, border:{color:'#cbd5e0'} },
+        y: { min:axYmin, max:axYmax,
+             title:{display:true, text:'Intensity', font:{size:13}},
+             grid:{color:'#edf2f7'}, border:{color:'#cbd5e0'} }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: c => {
+              const raw = c.raw;
+              const text = formatPointTooltip(raw);
+              if (raw && raw.sampleId) return [`Sample ${raw.sampleId}`, text];
+              return text;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function solveConcentration(intensity, fit, fitType, calMin, calMax) {
+  if (!fit) return null;
+
+  let conc = null;
+
+  if (fitType === 'linear') {
+    if (Math.abs(fit.m) < 1e-12) return null;
+    conc = (intensity - fit.b) / fit.m;
+
+  } else {
+    // Quadratic: a*x^2 + b*x + c = intensity  →  a*x^2 + b*x + (c - intensity) = 0
+    const A = fit.a, B = fit.b, C = fit.c - intensity;
+    const disc = B*B - 4*A*C;
+    if (disc < 0) return null;
+    const sqrtDisc = Math.sqrt(disc);
+    const x1 = (-B + sqrtDisc) / (2*A);
+    const x2 = (-B - sqrtDisc) / (2*A);
+
+    // Prefer the root inside the calibration range
+    const x1InRange = x1 >= calMin && x1 <= calMax;
+    const x2InRange = x2 >= calMin && x2 <= calMax;
+    if (x1InRange && !x2InRange) conc = x1;
+    else if (x2InRange && !x1InRange) conc = x2;
+    else if (x1InRange && x2InRange) conc = x1; // take the smaller root
+    else {
+      // Neither in range — pick closest to range midpoint for out-of-range display
+      const mid = (calMin + calMax) / 2;
+      conc = Math.abs(x1 - mid) < Math.abs(x2 - mid) ? x1 : x2;
+    }
+  }
+
+  return conc;
+}
+
+function updateModalStatus(text, tone = 'info') {
+  if (!modalStatusBadge) return;
+  modalStatusBadge.textContent = text;
+  modalStatusBadge.style.background = tone === 'success' ? '#ecfdf3' : tone === 'warn' ? '#fff7ed' : '#ebf8ff';
+  modalStatusBadge.style.color = tone === 'success' ? '#2f855a' : tone === 'warn' ? '#c05621' : '#2b6cb0';
+}
+
+function processIntensityInput() {
+  const { si, ti } = modalState;
+  if (si === undefined || ti === undefined || !chartStates[si] || !chartStates[si][ti]) return;
+  const state = chartStates[si][ti];
+
+  const raw = document.getElementById('intensityInput').value;
+  state.sampleInputs = raw;
+  const trimmed = raw.trim();
+
+  const included = state.originalPoints.filter((_,i) => !state.excluded.has(i));
+  const fit = (!state.invalid && included.length >= 2)
+    ? (state.fitType === 'linear' ? linReg(included) : quadReg(included))
+    : null;
+
+  const xs     = included.map(p => p.x);
+  const calMin = xs.length ? Math.min(...xs) : null;
+  const calMax = xs.length ? Math.max(...xs) : null;
+
+  const lines = raw.split(/[\n\r\t]+/).map(s => s.trim()).filter(s => s !== '');
+
+  const tbody     = document.getElementById('resultsBody');
+  tbody.innerHTML = '';
+  const samplePts = [];
+  let invalidCount = 0;
+
+  lines.forEach((line, idx) => {
+    const sampleNumber = idx + 1;
+    const intensity = parseFloat(line);
+    const tr = document.createElement('tr');
+    let markerCell = `<td><span class="sample-marker-chip neutral"><span class="sample-marker-icon">▲</span> Sample ${sampleNumber}</span></td>`;
+
+    if (isNaN(intensity)) {
+      invalidCount += 1;
+      tr.innerHTML = `${markerCell}<td>${line}</td><td class="out-of-range">Invalid input</td>`;
+      tbody.appendChild(tr);
+      return;
+    }
+
+    const conc = solveConcentration(intensity, fit, state.fitType, calMin, calMax);
+
+    let concCell;
+    if (conc === null) {
+      invalidCount += 1;
+      concCell = `<td class="out-of-range">No solution</td>`;
+    } else if (calMin !== null && (conc < calMin || conc > calMax)) {
+      invalidCount += 1;
+      concCell = `<td class="out-of-range">Out of range</td>`;
+    } else {
+      const color = getSampleColor(samplePts.length);
+      const estConc = parseFloat(conc.toPrecision(5));
+      markerCell = `<td><span class="sample-marker-chip" style="border-color:${color}; color:${color};"><span class="sample-marker-icon">▲</span> Sample ${sampleNumber}</span></td>`;
+      samplePts.push({ x: estConc, y: intensity, sampleId: sampleNumber, color });
+      concCell = `<td>${estConc}</td>`;
+    }
+
+    tr.innerHTML = `${markerCell}<td>${intensity}</td>${concCell}`;
+    tbody.appendChild(tr);
+  });
+
+  state.samplePoints = samplePts;
+  renderModalChart(si, ti, samplePts);
+  renderChart(si, ti);
+
+  if (!trimmed) {
+    updateModalStatus('Ready to enter samples', 'info');
+  } else if (samplePts.length > 0) {
+    updateModalStatus(`${samplePts.length} sample${samplePts.length === 1 ? '' : 's'} plotted`, 'success');
+  } else {
+    updateModalStatus(`${invalidCount} issue${invalidCount === 1 ? '' : 's'} to review`, 'warn');
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PARSE MANUAL DATA
+═══════════════════════════════════════════════════════════ */
+function parseManualData(concText, intensityText) {
+  try {
+    const concLines = concText.split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+    const intensityLines = intensityText.split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+
+    if (concLines.length < 2 || intensityLines.length < 2) {
+      throw new Error('Please paste at least two concentration and two intensity values.');
+    }
+
+    const parseValue = line => {
+      const match = line.match(/-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/);
+      return match ? parseFloat(match[0]) : NaN;
+    };
+
+    const points = [];
+    const rowCount = Math.min(concLines.length, intensityLines.length);
+    for (let i = 0; i < rowCount; i++) {
+      const x = parseValue(concLines[i]);
+      const y = parseValue(intensityLines[i]);
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        points.push({ x, y });
+      }
+    }
+
+    if (points.length < 2) {
+      throw new Error('Could not read enough valid numeric calibration points from both columns.');
+    }
+
+    dataSets = [[points]];
+    setNames = ['Set 1'];
+    numTrials = 1;
+    buildPage2();
+    showPage(2);
+  } catch (err) {
+    errorMsgEl.textContent = 'Error: ' + err.message;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PARSE XLSX
+═══════════════════════════════════════════════════════════ */
+function parseXLSX(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb   = XLSX.read(e.target.result, { type: 'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      const headers = (rows[0] || []).map(h => String(h ?? '').trim());
+
+      const trialCols = [];
+      for (let t = 0; t < numTrials; t++) {
+        const base = t * 2;
+        const iCol = findColFrom(headers, 'Intensity',   base);
+        const cCol = findColFrom(headers, 'Conc. (ppm)', base);
+        if (iCol === -1 || cCol === -1)
+          throw new Error(
+            `Could not find "Intensity" and "Conc. (ppm)" headers for Trial ${t+1}. ` +
+            `Expected them near columns ${base+1} and ${base+2}.`
+          );
+        trialCols.push({ iCol, cCol });
+      }
+
+      const trialPoints = trialCols.map(({ iCol, cCol }) => {
+        const pts = [];
+        for (let r = 1; r < rows.length; r++) {
+          const x = parseFloat(rows[r][cCol]);
+          const y = parseFloat(rows[r][iCol]);
+          if (!isNaN(x) && !isNaN(y)) pts.push({ x, y });
+        }
+        return pts;
+      });
+
+      if (!trialPoints[0] || trialPoints[0].length < 2)
+        throw new Error('Not enough numeric data rows found in Trial 1.');
+
+      const setRanges = detectSetRanges(trialPoints[0]);
+      if (setRanges.length === 0)
+        throw new Error('Could not detect any calibration sets.');
+
+      dataSets = setRanges.map(({ start, end }) =>
+        trialPoints.map(pts => pts.slice(start, end + 1))
+      );
+      setNames = dataSets.map((_, i) => 'Set ' + (i + 1));
+
+      buildPage2();
+      showPage(2);
+    } catch (err) {
+      errorMsgEl.textContent = 'Error: ' + err.message;
+    }
+    showSpinner(false);
+  };
+  reader.onerror = () => { errorMsgEl.textContent = 'Failed to read file.'; showSpinner(false); };
+  reader.readAsArrayBuffer(file);
+}
+
+function findColFrom(headers, name, fromCol) {
+  for (let i = fromCol; i < headers.length; i++)
+    if (headers[i] === name) return i;
+  return -1;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SET DETECTION
+   Track direction of travel through the concentration column.
+   When direction reverses, close current set and open a new
+   one.  Reset dir to null after each split so the new set
+   establishes its own direction from scratch.
+═══════════════════════════════════════════════════════════ */
+function detectSetRanges(points) {
+  if (!points || points.length === 0) return [];
+  if (points.length === 1) return [{ start: 0, end: 0 }];
+
+  const ranges = [];
+  let start = 0;
+  let dir   = null;
+
+  for (let i = 1; i < points.length; i++) {
+    const diff = points[i].x - points[i - 1].x;
+    if (diff === 0) continue;
+
+    const newDir = diff < 0 ? 'down' : 'up';
+
+    if (dir === null) {
+      dir = newDir;
+    } else if (newDir !== dir) {
+      ranges.push({ start, end: i - 1 });
+      start = i;
+      dir   = null;
+    }
+  }
+
+  ranges.push({ start, end: points.length - 1 });
+  return ranges;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LOAD JSON SESSION
+═══════════════════════════════════════════════════════════ */
+function loadSession(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const session = JSON.parse(e.target.result);
+      if (!session.version || !session.dataSets || !session.states)
+        throw new Error('Invalid or corrupted session file.');
+
+      dataSets  = session.dataSets;
+      setNames  = session.setNames  || dataSets.map((_, i) => 'Set ' + (i + 1));
+      numTrials = session.numTrials || (dataSets[0] ? dataSets[0].length : 1);
+
+      buildPage2();
+
+      session.states.forEach(saved => {
+        const state = chartStates[saved.setIdx]?.[saved.trialIdx];
+        if (!state) return;
+        state.fitType  = saved.fitType;
+        state.excluded = new Set(saved.excluded);
+        state.invalid  = saved.invalid || false;
+        state.sampleInputs = saved.sampleInputs || '';   // ← ADD THIS
+
+
+        const fitEl     = document.getElementById(`fit-${saved.setIdx}-${saved.trialIdx}`);
+        const invalidEl = document.getElementById(`invalid-${saved.setIdx}-${saved.trialIdx}`);
+        if (fitEl)     fitEl.value       = saved.fitType;
+        if (invalidEl) invalidEl.checked = state.invalid;
+
+        renderChart(saved.setIdx, saved.trialIdx);
+        if (state.sampleInputs) {
+            rebuildSamplePoints(saved.setIdx, saved.trialIdx);
+            renderChart(saved.setIdx, saved.trialIdx); // re-render with triangles
+        }
+
+      });
+
+      setNames.forEach((name, si) => {
+        const el = document.getElementById('name-' + si);
+        if (el) el.value = name;
+      });
+
+      showPage(2);
+    } catch (err) {
+      errorMsgEl.textContent = 'Error loading session: ' + err.message;
+    }
+    showSpinner(false);
+  };
+  reader.onerror = () => { errorMsgEl.textContent = 'Failed to read session file.'; showSpinner(false); };
+  reader.readAsText(file);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   BUILD PAGE 2
+═══════════════════════════════════════════════════════════ */
+function buildPage2() {
+  const container = document.getElementById('graphsContainer');
+  container.innerHTML = '';
+  chartInstances.forEach(row => row && row.forEach(c => c && c.destroy()));
+  chartInstances = [];
+  chartStates    = [];
+
+  dataSets.forEach((trialArray, si) => {
+    const stateRow    = [];
+    const instanceRow = [];
+
+    trialArray.forEach((pts, ti) => {
+      stateRow.push({
+        setIdx: si, trialIdx: ti,
+        originalPoints: pts.map(p => ({ ...p })),
+        excluded: new Set(),
+        fitType:  'linear',
+        invalid:  false,
+        history:  [],
+        future:   [],
+        sampleInputs: '',      // ← ADD THIS
+        samplePoints: [],      // ← ADD THIS
+      });
+      instanceRow.push(null);
+    });
+
+    chartStates.push(stateRow);
+    chartInstances.push(instanceRow);
+
+    /* Card */
+    const card = document.createElement('div');
+    card.className = 'graph-card';
+    card.id = 'card-' + si;
+
+    const header = document.createElement('div');
+    header.className = 'graph-card-header';
+    header.innerHTML = `
+      <span class="set-label">Set ${si + 1}</span>
+      <input class="name-input" id="name-${si}" type="text"
+             value="${setNames[si]}" placeholder="Dataset name\u2026"/>
+    `;
+    card.appendChild(header);
+    header.querySelector('.name-input').addEventListener('input', ev => {
+      setNames[si] = ev.target.value;
+    });
+
+    /* Trials strip */
+    const strip = document.createElement('div');
+    strip.className = 'trials-strip';
+
+    trialArray.forEach((_, ti) => {
+      strip.appendChild(buildTrialPanel(si, ti));
+      if (ti < trialArray.length - 1) {
+        const col = document.createElement('div');
+        col.className = 'copy-col';
+        col.innerHTML = `
+          <button class="btn-copy" id="copy-right-${si}-${ti}"
+                  title="Copy settings: Trial ${ti+1} \u2192 Trial ${ti+2}">&#8250;</button>
+          <span class="copy-label">Copy<br>settings</span>
+          <button class="btn-copy" id="copy-left-${si}-${ti+1}"
+                  title="Copy settings: Trial ${ti+2} \u2192 Trial ${ti+1}">&#8249;</button>
+        `;
+        strip.appendChild(col);
+        col.querySelector(`#copy-right-${si}-${ti}`)
+           .addEventListener('click', () => copySettings(si, ti, ti + 1));
+        col.querySelector(`#copy-left-${si}-${ti+1}`)
+           .addEventListener('click', () => copySettings(si, ti + 1, ti));
+      }
+    });
+
+    card.appendChild(strip);
+    container.appendChild(card);
+    trialArray.forEach((_, ti) => renderChart(si, ti));
+  });
+}
+
+/* ── Build one trial panel ── */
+function buildTrialPanel(si, ti) {
+  const panel = document.createElement('div');
+  panel.className = 'trial-panel';
+  panel.id = `panel-${si}-${ti}`;
+  panel.innerHTML = `
+    <div class="trial-panel-header">
+      <span class="trial-label">Trial ${ti + 1}</span>
+      <label class="invalid-label" title="Mark this trial as invalid">
+        <input type="checkbox" id="invalid-${si}-${ti}"/>
+        Invalid
+      </label>
+      <select class="fit-select" id="fit-${si}-${ti}">
+        <option value="linear">Linear</option>
+        <option value="quadratic">Quadratic (2nd order)</option>
+      </select>
+    </div>
+    <div class="graph-wrap"><canvas id="canvas-${si}-${ti}"></canvas></div>
+    <div class="graph-meta">
+      <div class="graph-stats">
+        <span class="r2-badge" id="r2-${si}-${ti}">R\u00B2 = \u2014</span>
+        <span class="formula-text" id="formula-${si}-${ti}"></span>
+      </div>
+      <div class="graph-controls">
+        <button class="btn-ctrl" id="undo-${si}-${ti}">\u2190 Undo</button>
+        <button class="btn-ctrl" id="redo-${si}-${ti}">Redo \u2192</button>
+        <button class="btn-ctrl restart" id="restart-${si}-${ti}">\u21BA Restart</button>
+        <button class="btn-ctrl use" id="use-${si}-${ti}">Use</button>
+
+      </div>
+    </div>
+    <p class="hint">Click a point to toggle include / exclude.</p>
+  `;
+
+  panel.querySelector(`#invalid-${si}-${ti}`).addEventListener('change', ev => {
+    chartStates[si][ti].invalid = ev.target.checked;
+    panel.classList.toggle('is-invalid', ev.target.checked);
+    renderChart(si, ti);
+  });
+  panel.querySelector(`#fit-${si}-${ti}`).addEventListener('change', ev => {
+    chartStates[si][ti].fitType = ev.target.value; renderChart(si, ti);
+  });
+  panel.querySelector(`#undo-${si}-${ti}`)   .addEventListener('click', () => undoAction(si, ti));
+  panel.querySelector(`#redo-${si}-${ti}`)   .addEventListener('click', () => redoAction(si, ti));
+  panel.querySelector(`#restart-${si}-${ti}`).addEventListener('click', () => restartSet(si, ti));
+  panel.querySelector(`#use-${si}-${ti}`).addEventListener('click', () => openUseModal(si, ti));
+
+  return panel;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   COPY SETTINGS
+═══════════════════════════════════════════════════════════ */
+function copySettings(si, srcTi, dstTi) {
+  const src = chartStates[si][srcTi];
+  const dst = chartStates[si][dstTi];
+  const excludedX = new Set(Array.from(src.excluded).map(i => src.originalPoints[i].x));
+
+  dst.history.push(new Set(dst.excluded));
+  dst.future   = [];
+  dst.fitType  = src.fitType;
+  dst.invalid  = src.invalid;
+
+  const fitEl     = document.getElementById(`fit-${si}-${dstTi}`);
+  const invalidEl = document.getElementById(`invalid-${si}-${dstTi}`);
+  const panelEl   = document.getElementById(`panel-${si}-${dstTi}`);
+  if (fitEl)     fitEl.value       = dst.fitType;
+  if (invalidEl) invalidEl.checked = dst.invalid;
+  if (panelEl)   panelEl.classList.toggle('is-invalid', dst.invalid);
+
+  dst.excluded = new Set();
+  dst.originalPoints.forEach((p, i) => { if (excludedX.has(p.x)) dst.excluded.add(i); });
+  renderChart(si, dstTi);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MATH
+═══════════════════════════════════════════════════════════ */
+function linReg(pts) {
+  const n = pts.length;
+  if (n < 2) return null;
+  let sx=0,sy=0,sxy=0,sx2=0;
+  pts.forEach(p=>{sx+=p.x;sy+=p.y;sxy+=p.x*p.y;sx2+=p.x*p.x;});
+  const d=n*sx2-sx*sx;
+  if(d===0)return null;
+  const m=(n*sxy-sx*sy)/d, b=(sy-m*sx)/n;
+  return {m,b,predict:x=>m*x+b};
+}
+
+function quadReg(pts) {
+  const n=pts.length;
+  if(n<3)return null;
+  let s0=n,s1=0,s2=0,s3=0,s4=0,t0=0,t1=0,t2=0;
+  pts.forEach(p=>{
+    const x=p.x,y=p.y;
+    s1+=x;s2+=x*x;s3+=x*x*x;s4+=x*x*x*x;
+    t0+=y;t1+=x*y;t2+=x*x*y;
+  });
+  const M=[[s0,s1,s2,t0],[s1,s2,s3,t1],[s2,s3,s4,t2]];
+  const sol=gaussElim(M);
+  if(!sol)return null;
+  const [c,b,a]=sol;
+  return {a,b,c,predict:x=>a*x*x+b*x+c};
+}
+
+function gaussElim(M) {
+  const n=M.length;
+  for(let col=0;col<n;col++){
+    let mr=col;
+    for(let r=col+1;r<n;r++)if(Math.abs(M[r][col])>Math.abs(M[mr][col]))mr=r;
+    [M[col],M[mr]]=[M[mr],M[col]];
+    if(Math.abs(M[col][col])<1e-12)return null;
+    for(let r=col+1;r<n;r++){
+      const f=M[r][col]/M[col][col];
+      for(let k=col;k<=n;k++)M[r][k]-=f*M[col][k];
+    }
+  }
+  const x=new Array(n).fill(0);
+  for(let i=n-1;i>=0;i--){
+    x[i]=M[i][n]/M[i][i];
+    for(let k=i-1;k>=0;k--)M[k][n]-=M[k][i]*x[i];
+  }
+  return x;
+}
+
+function calcR2(pts,predict){
+  if(pts.length<2)return NaN;
+  const mean=pts.reduce((s,p)=>s+p.y,0)/pts.length;
+  const ssTot=pts.reduce((s,p)=>s+(p.y-mean)**2,0);
+  const ssRes=pts.reduce((s,p)=>s+(p.y-predict(p.x))**2,0);
+  return ssTot===0?1:1-ssRes/ssTot;
+}
+
+function fmt(v){
+  if(v===0)return '0';
+  const a=Math.abs(v);
+  if(a<0.001||a>=1e6)return parseFloat(v.toPrecision(6)).toExponential();
+  return parseFloat(v.toPrecision(6)).toString();
+}
+
+function sigFig(n,sf){
+  if(n===0)return '0';
+  const d=Math.ceil(Math.log10(Math.abs(n)));
+  const mag=Math.pow(10,sf-d);
+  return (Math.round(n*mag)/mag).toString();
+}
+
+function buildFormulaString(fit,fitType){
+  if(!fit)return '';
+  if(fitType==='linear'){
+    const s=fit.b>=0?'+':'-';
+    return 'y = '+fmt(fit.m)+'x '+s+' '+fmt(Math.abs(fit.b));
+  }
+  const sb=fit.b>=0?'+':'-',sc=fit.c>=0?'+':'-';
+  return 'y = '+fmt(fit.a)+'x\u00B2 '+sb+' '+fmt(Math.abs(fit.b))+'x '+sc+' '+fmt(Math.abs(fit.c));
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RENDER CHART
+═══════════════════════════════════════════════════════════ */
+function renderChart(si, ti) {
+  const state    = chartStates[si][ti];
+  const allPts   = state.originalPoints;
+  const included = allPts.filter((_,i) => !state.excluded.has(i));
+
+  /* If invalid, suppress regression entirely */
+  let fit = null;
+  if (!state.invalid && included.length >= 2)
+    fit = state.fitType === 'linear' ? linReg(included) : quadReg(included);
+
+  const r2 = fit ? calcR2(included, fit.predict) : NaN;
+
+  const r2El = document.getElementById(`r2-${si}-${ti}`);
+  if (state.invalid) {
+    r2El.textContent = 'R\u00B2 = \u2014';
+    r2El.classList.add('invalid');
+  } else {
+    r2El.textContent = isNaN(r2) ? 'R\u00B2 = \u2014' : 'R\u00B2 = ' + r2.toFixed(4);
+    r2El.classList.remove('invalid');
+  }
+  document.getElementById(`formula-${si}-${ti}`).textContent =
+    state.invalid ? '' : buildFormulaString(fit, state.fitType);
+
+  const src  = included.length > 0 ? included : allPts;
+  const xMin = Math.min(...src.map(p=>p.x)), xMax = Math.max(...src.map(p=>p.x));
+  const yMin = Math.min(...src.map(p=>p.y)), yMax = Math.max(...src.map(p=>p.y));
+  const xPad = (xMax-xMin)*0.08||1, yPad = (yMax-yMin)*0.08||1;
+  const axXmin=xMin-xPad, axXmax=xMax+xPad, axYmin=yMin-yPad, axYmax=yMax+yPad;
+
+  /* Fit line — empty array when invalid */
+  const fitLine = [];
+  if (fit)
+    for (let i=0;i<=120;i++){
+      const x=axXmin+(axXmax-axXmin)*i/120;
+      fitLine.push({x,y:fit.predict(x)});
+    }
+
+  const incData = allPts
+    .map((p,oi)=>({x:p.x,y:p.y,origIdx:oi}))
+    .filter(({origIdx})=>!state.excluded.has(origIdx));
+
+  const excData = allPts
+    .map((p,oi)=>({
+      x:Math.max(axXmin,Math.min(axXmax,p.x)),
+      y:Math.max(axYmin,Math.min(axYmax,p.y)),
+      origIdx:oi
+    }))
+    .filter(({origIdx})=>state.excluded.has(origIdx));
+
+  if(chartInstances[si][ti]){chartInstances[si][ti].destroy();chartInstances[si][ti]=null;}
+
+  const ctx=document.getElementById(`canvas-${si}-${ti}`).getContext('2d');
+  chartInstances[si][ti]=new Chart(ctx,{
+    type:'scatter',
+    data:{datasets:[
+      {label:'Included',data:incData,
+       backgroundColor: state.invalid ? 'rgba(160,174,192,0.5)' : '#4299e1',
+       borderColor:     state.invalid ? '#a0aec0' : '#2b6cb0',
+       pointRadius:7,pointHoverRadius:9,pointStyle:'circle',showLine:false,order:2},
+      {label:'Excluded',data:excData,
+       backgroundColor:'rgba(160,174,192,0.7)',borderColor:'#a0aec0',
+       pointRadius:7,pointHoverRadius:9,pointStyle:'crossRot',showLine:false,order:3},
+      buildSampleDataset(state.samplePoints || []),
+      {label:'Fit',data:fitLine,type:'line',
+       borderColor:'#e53e3e',borderWidth:2,borderDash:[8,5],
+       pointRadius:0,fill:false,tension:0,order:1}
+    ]},
+    options:{
+      responsive:true,maintainAspectRatio:false,animation:{duration:200},
+      layout: { padding: { top: 8, right: 8, bottom: 8, left: 8 } },
+      scales:{
+        x:{type:'linear',min:axXmin,max:axXmax,
+           title:{display:true,text:'Conc. (ppm)',font:{size:11}},grid:{color:'#edf2f7'}, border:{color:'#cbd5e0'}},
+        y:{min:axYmin,max:axYmax,
+           title:{display:true,text:'Intensity',font:{size:11}},grid:{color:'#edf2f7'}, border:{color:'#cbd5e0'}}
+      },
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:c=>{
+          const raw = c.raw;
+          const text = formatPointTooltip(raw);
+          if (raw && raw.sampleId) return [`Sample ${raw.sampleId}`, text];
+          return text;
+        }}}
+      },
+      onClick:(event,elements)=>{
+        if(state.invalid)return; /* ignore clicks when invalid */
+        const hits=elements.filter(el=>el.datasetIndex===0||el.datasetIndex===1);
+        if(!hits.length)return;
+        const pt=chartInstances[si][ti].data.datasets[hits[0].datasetIndex].data[hits[0].index];
+        if(pt.origIdx===undefined)return;
+        state.history.push(new Set(state.excluded));
+        state.future=[];
+        state.excluded.has(pt.origIdx)
+          ?state.excluded.delete(pt.origIdx)
+          :state.excluded.add(pt.origIdx);
+        renderChart(si,ti);
+      }
+    }
+  });
+}
+
+/* ── Undo / Redo / Restart ── */
+function undoAction(si,ti){
+  const s=chartStates[si][ti];
+  if(!s.history.length)return;
+  s.future.push(new Set(s.excluded));s.excluded=s.history.pop();renderChart(si,ti);
+}
+function redoAction(si,ti){
+  const s=chartStates[si][ti];
+  if(!s.future.length)return;
+  s.history.push(new Set(s.excluded));s.excluded=s.future.pop();renderChart(si,ti);
+}
+function restartSet(si,ti){
+  const s=chartStates[si][ti];
+  s.history.push(new Set(s.excluded));s.future=[];s.excluded=new Set();renderChart(si,ti);
+}
+/* Silently recompute samplePoints from saved sampleInputs — no DOM/modal needed */
+function rebuildSamplePoints(si, ti) {
+  const state    = chartStates[si][ti];
+  const included = state.originalPoints.filter((_,i) => !state.excluded.has(i));
+  const fit = (!state.invalid && included.length >= 2)
+    ? (state.fitType === 'linear' ? linReg(included) : quadReg(included))
+    : null;
+
+  const xs     = included.map(p => p.x);
+  const calMin = xs.length ? Math.min(...xs) : null;
+  const calMax = xs.length ? Math.max(...xs) : null;
+
+  const lines = (state.sampleInputs || '')
+    .split(/[\n\r\t]+/).map(s => s.trim()).filter(s => s !== '');
+
+  const samplePts = [];
+  lines.forEach((line, idx) => {
+    const sampleNumber = idx + 1;
+    const intensity = parseFloat(line);
+    if (isNaN(intensity)) return;
+    const conc = solveConcentration(intensity, fit, state.fitType, calMin, calMax);
+    if (conc === null) return;
+    if (calMin !== null && (conc < calMin || conc > calMax)) return;
+    const estConc = parseFloat(conc.toPrecision(5));
+    samplePts.push({ x: estConc, y: intensity, sampleId: sampleNumber, color: getSampleColor(samplePts.length) });
+  });
+
+  state.samplePoints = samplePts;
+}
+
+
+/* ── Navigation ── */
+function showPage(n){
+  document.getElementById('page1').style.display=n===1?'flex':'none';
+  document.getElementById('page2').style.display=n===2?'block':'none';
+}
+function showSpinner(v){document.getElementById('spinner').classList.toggle('active',v);}
+document.getElementById('backBtn').addEventListener('click',()=>{
+  showPage(1);
+  setInputMode(inputMode);
+});
+
+document.getElementById('modalCloseBtn').addEventListener('click', () => {
+  document.getElementById('useModal').style.display = 'none';
+  if (modalChartInstance) { modalChartInstance.destroy(); modalChartInstance = null; }
+});
+
+// Close on backdrop click
+document.getElementById('useModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('useModal')) {
+    document.getElementById('useModal').style.display = 'none';
+    if (modalChartInstance) { modalChartInstance.destroy(); modalChartInstance = null; }
+  }
+});
+
+const intensityInputEl = document.getElementById('intensityInput');
+const clearSamplesBtn = document.getElementById('clearSamplesBtn');
+const exampleSamplesBtn = document.getElementById('exampleSamplesBtn');
+
+function scheduleIntensityInputUpdate() {
+  if (intensityInputTimer) clearTimeout(intensityInputTimer);
+  intensityInputTimer = setTimeout(() => {
+    processIntensityInput();
+    intensityInputTimer = null;
+  }, 180);
+}
+intensityInputEl.addEventListener('input', scheduleIntensityInputUpdate);
+intensityInputEl.addEventListener('change', processIntensityInput);
+
+clearSamplesBtn.addEventListener('click', () => {
+  intensityInputEl.value = '';
+  if (modalState) {
+    const { si, ti } = modalState;
+    const state = chartStates[si]?.[ti];
+    if (state) {
+      state.sampleInputs = '';
+      state.samplePoints = [];
+      renderModalChart(si, ti, []);
+      renderChart(si, ti);
+      updateModalStatus('Cleared', 'info');
+    }
+  }
+  document.getElementById('resultsBody').innerHTML = '';
+});
+
+exampleSamplesBtn.addEventListener('click', () => {
+  intensityInputEl.value = '1200\n1450\n1700';
+  processIntensityInput();
+});
+
+/* ═══════════════════════════════════════════════════════════
+   SAVE SESSION
+═══════════════════════════════════════════════════════════ */
+document.getElementById('saveSessionBtn').addEventListener('click',()=>{
+  const session={
+    version:2,savedAt:new Date().toISOString(),
+    numTrials,dataSets,setNames,
+    states:chartStates.flatMap(row=>row.map(s=>({
+      setIdx:   s.setIdx,
+      trialIdx: s.trialIdx,
+      fitType:  s.fitType,
+      excluded: Array.from(s.excluded),
+      invalid:  s.invalid,
+      sampleInputs: s.sampleInputs || '',   // ← ADD THIS
+    })))
+  };
+  const blob=new Blob([JSON.stringify(session,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='calibration_session_'+new Date().toISOString().slice(0,10)+'.json';
+  a.click();URL.revokeObjectURL(a.href);
+});
+
+/* ═══════════════════════════════════════════════════════════
+   EXPORT
+═══════════════════════════════════════════════════════════ */
+document.getElementById('exportBtn').addEventListener('click',async()=>{
+  const doSummary=document.getElementById('expSummary').checked;
+  const doCurves =document.getElementById('expCurves').checked;
+  const doData   =document.getElementById('expData').checked;
+  if(!doSummary&&!doCurves&&!doData){alert('Select at least one export option.');return;}
+  showSpinner(true);
+  await new Promise(r=>setTimeout(r,80));
+  try{
+    if(doSummary&&!doCurves&&!doData)exportCSV();
+    else await exportPDF(doSummary,doCurves,doData);
+  }catch(e){alert('Export error: '+e.message);console.error(e);}
+  showSpinner(false);
+});
+
+/* ── CSV ── */
+function exportCSV(){
+  const rows=[['Set Name','Trial','R2','Linear Dynamic Range (ppm)','Linearity']];
+  chartStates.forEach((row,si)=>row.forEach((s,ti)=>{
+    if(s.invalid){
+      rows.push([setNames[si],'Trial '+(ti+1),'-','-','-']);
+      return;
+    }
+    const inc=s.originalPoints.filter((_,i)=>!s.excluded.has(i));
+    let r2='';
+    if(inc.length>=2){
+      const f=s.fitType==='linear'?linReg(inc):quadReg(inc);
+      if(f)r2=calcR2(inc,f.predict).toFixed(4);
+    }
+    const xs=inc.map(p=>p.x);
+    const range=xs.length?sigFig(Math.min(...xs),3)+' - '+sigFig(Math.max(...xs),3):'';
+    rows.push([setNames[si],'Trial '+(ti+1),r2,range,
+               s.fitType==='linear'?'Linear':'Quadratic']);
+  }));
+  const blob=new Blob(['\uFEFF'+rows.map(r=>r.map(c=>'"'+c+'"').join(',')).join('\r\n')],
+    {type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download='summary.csv';a.click();
+}
+
+/* ── PDF ── */
+async function exportPDF(doSummary,doCurves,doData){
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const pageW=doc.internal.pageSize.getWidth();
+  const pageH=doc.internal.pageSize.getHeight();
+  const margin=15;let y=margin;
+
+  function checkPage(need){if(y+need>pageH-margin){doc.addPage();y=margin;}}
+  function sectionTitle(txt){
+    checkPage(12);
+    doc.setFontSize(13);doc.setFont(undefined,'bold');doc.setTextColor(44,82,130);
+    doc.text(txt,margin,y);y+=8;
+    doc.setTextColor(0,0,0);doc.setFont(undefined,'normal');
+  }
+  function subTitle(txt){
+    checkPage(10);
+    doc.setFontSize(11);doc.setFont(undefined,'bold');
+    doc.text(txt,margin,y);y+=6;doc.setFont(undefined,'normal');
+  }
+
+  /* Summary */
+  if(doSummary){
+    sectionTitle('Summary Table');
+    const head=[['Set Name','Trial','R2','Linear Dynamic Range (ppm)','Linearity']];
+    const body=chartStates.flatMap((row,si)=>row.map((s,ti)=>{
+      if(s.invalid)
+        return[setNames[si],'Trial '+(ti+1),'-','-','-'];
+      const inc=s.originalPoints.filter((_,i)=>!s.excluded.has(i));
+      let r2='\u2014';
+      if(inc.length>=2){
+        const f=s.fitType==='linear'?linReg(inc):quadReg(inc);
+        if(f)r2=calcR2(inc,f.predict).toFixed(4);
+      }
+      const xs=inc.map(p=>p.x);
+      const range=xs.length
+        ?sigFig(Math.min(...xs),3)+' - '+sigFig(Math.max(...xs),3):'\u2014';
+      return[setNames[si],'Trial '+(ti+1),r2,range,
+             s.fitType==='linear'?'Linear':'Quadratic'];
+    }));
+    doc.autoTable({startY:y,head,body,margin:{left:margin,right:margin},
+      headStyles:{fillColor:[66,153,225]},styles:{fontSize:9}});
+    y=doc.lastAutoTable.finalY+10;
+  }
+
+  /* Calibration Curves */
+  if(doCurves){
+    sectionTitle('Calibration Curves');
+    for(let si=0;si<chartStates.length;si++){
+      for(let ti=0;ti<chartStates[si].length;ti++){
+        const s=chartStates[si][ti];
+        const inc=s.originalPoints.filter((_,i)=>!s.excluded.has(i));
+
+        let fit=null;
+        if(!s.invalid&&inc.length>=2)
+          fit=s.fitType==='linear'?linReg(inc):quadReg(inc);
+
+        const r2=fit?calcR2(inc,fit.predict):NaN;
+        const r2str=s.invalid?'-':isNaN(r2)?'N/A':r2.toFixed(4);
+        const fmStr=s.invalid?'':buildFormulaString(fit,s.fitType);
+
+        const src=inc.length>0?inc:s.originalPoints;
+        const xMin=Math.min(...src.map(p=>p.x)),xMax=Math.max(...src.map(p=>p.x));
+        const yMin=Math.min(...src.map(p=>p.y)),yMax=Math.max(...src.map(p=>p.y));
+        const xPad=(xMax-xMin)*0.08||1,yPad=(yMax-yMin)*0.08||1;
+        const axXmin=xMin-xPad,axXmax=xMax+xPad,axYmin=yMin-yPad,axYmax=yMax+yPad;
+
+        const fitLine=[];
+        if(fit)for(let i=0;i<=120;i++){
+          const x=axXmin+(axXmax-axXmin)*i/120;
+          fitLine.push({x,y:fit.predict(x)});
+        }
+
+        const oc=document.createElement('canvas');
+        oc.width=900;oc.height=500;
+        const octx=oc.getContext('2d');
+        octx.fillStyle='#ffffff';octx.fillRect(0,0,900,500);
+
+        const ec=new Chart(octx,{
+          type:'scatter',
+          data:{datasets:[
+            {data:inc.map(p=>({x:p.x,y:p.y})),
+             backgroundColor: s.invalid?'rgba(160,174,192,0.5)':'#4299e1',
+             borderColor:     s.invalid?'#a0aec0':'#2b6cb0',
+             pointRadius:6,pointStyle:'circle',showLine:false,order:2},
+            {data:fitLine,type:'line',
+             borderColor:'#e53e3e',borderWidth:2.5,borderDash:[10,6],
+             pointRadius:0,fill:false,tension:0,order:1}
+          ]},
+          options:{
+            responsive:false,animation:false,
+            scales:{
+              x:{type:'linear',min:axXmin,max:axXmax,
+                 title:{display:true,text:'Conc. (ppm)',font:{size:14}},
+                 grid:{display:false},border:{display:true}},
+              y:{min:axYmin,max:axYmax,
+                 title:{display:true,text:'Intensity',font:{size:14}},
+                 grid:{display:false},border:{display:true}}
+            },
+            plugins:{legend:{display:false},tooltip:{enabled:false}}
+          }
+        });
+
+        await new Promise(r=>setTimeout(r,60));
+        const imgData=oc.toDataURL('image/png',1.0);
+        ec.destroy();
+
+        checkPage(20);
+        subTitle((setNames[si]||`Set ${si+1}`)+' \u2014 Trial '+(ti+1)+
+                 (s.invalid?' [INVALID]':''));
+        doc.setFontSize(9);
+        doc.text('R2 = '+r2str,margin,y);y+=5;
+        if(fmStr){doc.text(fmStr,margin,y);y+=5;}
+        const imgW=pageW-margin*2,imgH=imgW*(500/900);
+        checkPage(imgH+8);
+        doc.addImage(imgData,'PNG',margin,y,imgW,imgH);
+        y+=imgH+12;
+      }
+    }
+  }
+
+  /* Data Points */
+  if(doData){
+    sectionTitle('Data Points');
+    for(let si=0;si<chartStates.length;si++){
+      for(let ti=0;ti<chartStates[si].length;ti++){
+        const s=chartStates[si][ti];
+        const inc=s.originalPoints.filter((_,i)=>!s.excluded.has(i));
+        checkPage(20);
+        subTitle((setNames[si]||`Set ${si+1}`)+' \u2014 Trial '+(ti+1)+
+                 (s.invalid?' [INVALID]':''));
+        if(s.invalid){
+          doc.setFontSize(9);doc.setTextColor(197,48,48);
+          doc.text('This trial was marked as invalid.',margin,y);
+          doc.setTextColor(0,0,0);y+=8;
+          continue;
+        }
+        doc.autoTable({startY:y,head:[['Conc. (ppm)','Intensity']],
+          body:inc.map(p=>[p.x,p.y]),
+          margin:{left:margin,right:margin},
+          headStyles:{fillColor:[66,153,225]},styles:{fontSize:9}});
+        y=doc.lastAutoTable.finalY+8;
+      }
+    }
+  }
+
+  doc.save('calibration_report.pdf');
+}
+</script>
+</body>
+</html>
